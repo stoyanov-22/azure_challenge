@@ -184,8 +184,6 @@ resource "databricks_cluster" "test_cluster" {
   depends_on = [azurerm_databricks_workspace.databricks]
 }
 
-# Azure Data Factory
-
 resource "azurerm_data_factory" "adf" {
   name                = "${var.env_prefix}-adf-demo-project-stoyan"
   location            = var.location
@@ -204,6 +202,7 @@ resource "azurerm_data_factory_linked_service_azure_databricks" "at_linked" {
     driver_node_type      = "Standard_D4ds_v5"
     log_destination       = "dbfs:/logs"
   }
+  
   access_token = databricks_token.adf_token.token_value
   adb_domain   = "https://${azurerm_databricks_workspace.databricks.workspace_url}"
 

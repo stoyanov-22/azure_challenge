@@ -1,8 +1,15 @@
 # Databricks notebook source
+# MAGIC %pip install loguru
+
+# COMMAND ----------
+
 import requests
+import time
 import json
+
+from loguru import logger
 from pyspark.sql import Row
-from pyspark.sql.functions import col, avg, min, max, year, month, round, date_format
+from pyspark.sql.functions import col, avg, min, max, year, month, round, date_format, desc
 from datetime import datetime
 
 # COMMAND ----------
@@ -12,7 +19,7 @@ from datetime import datetime
 
 # COMMAND ----------
 
-def automount(databricks_scope,sa_name, sa_key, api):
+def automount(databricks_scope, sa_name, sa_key, api):
     storage_account_name = dbutils.secrets.get(databricks_scope, sa_name)
 
     spark.conf.set(
@@ -25,8 +32,34 @@ def automount(databricks_scope,sa_name, sa_key, api):
 
 API_KEY, storage_account_name = automount("my-keyvault-scope", "storageAccountName", "storageAccountKey", "weather-api")
 
-daily_data_path = f"abfss://databricks@{storage_account_name}.dfs.core.windows.net/daily_weather_air_data"
-aggregated_data_path = f"abfss://databricks@{storage_account_name}.dfs.core.windows.net/aggregated_weather_air_data"
+daily_data_path = f"abfss://databricks@{storage_account_name}.dfs.core.windows.net/daily_weather_air_data_delta"
+aggregated_data_path = f"abfss://databricks@{storage_account_name}.dfs.core.windows.net/aggregated_weather_air_data_delta"
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Logger
+
+# COMMAND ----------
+
+# Initialize Logger
+log_table_path = f"abfss://databricks@{storage_account_name}.dfs.core.windows.net/logs/databricks_logs"
+
+# Function to write logs immediately to Delta
+def log_sink(message):
+    parts = message.split(" - ", 2)  # Splitting into time, level, and message
+    if len(parts) == 3:
+        log_row = [Row(timestamp=parts[0], level=parts[1], message=parts[2])]
+        log_df = spark.createDataFrame(log_row)
+        log_df.write.mode("append").format("delta").save(log_table_path)  # Append log entry to Delta
+
+# Configure Loguru to use log_sink
+logger.remove()
+logger.add(lambda msg: print(msg, end=""), format="{time:YYYY-MM-DD HH:mm:ss.SSS} - {level} - {message}", level="INFO")
+logger.add(log_sink, format="{time:YYYY-MM-DD HH:mm:ss.SSS} - {level} - {message}")
+
+logger.info("Logger initialized!")
+
 
 # COMMAND ----------
 
@@ -43,6 +76,7 @@ daily_data = []
 
 # Fetch data from APIs
 for city in cities:
+    logger.info(f"Fetching weather data for {city}.")
     # Fetch Weather Data
     weather_url = f"https://api.openweathermap.org/data/2.5/weather?q={city}&appid={API_KEY}&units=metric"
     weather_response = requests.get(weather_url)
@@ -51,6 +85,7 @@ for city in cities:
         weather_json = weather_response.json()
         lat, lon = weather_json["coord"]["lat"], weather_json["coord"]["lon"]
 
+        logger.info(f"Fetching air pollution data for {city}.")
         # Fetch Air Pollution Data
         air_pollution_url = f"https://api.openweathermap.org/data/2.5/air_pollution?lat={lat}&lon={lon}&appid={API_KEY}"
         air_pollution_response = requests.get(air_pollution_url)
@@ -72,24 +107,27 @@ for city in cities:
                 co2=float(air_pollution_json["list"][0]["components"]["co"]) 
             ))
         else:
-            print(f"Error fetching air pollution data for {city}: {air_pollution_response.status_code}")
+            logger.warning(f"Failed to fetch air pollution data for {city}, Status Code: {air_pollution_response.status_code}")
     else:
-        print(f"Error fetching weather data for {city}: {weather_response.status_code}")
+        logger.warning(f"Failed to fetch weather data for {city}, Status Code: {weather_response.status_code}")
 
 # Convert today's data to DataFrame
+logger.info("Converting data to Spark DataFrame.")
 daily_df = spark.createDataFrame(daily_data)
 
 # Try to read existing historical daily data
 try:
-    historical_daily_df = spark.read.format("parquet").load(daily_data_path)
-    combined_daily_df = historical_daily_df.union(daily_df) 
+    historical_daily_df = spark.read.format("delta").load(daily_data_path)
+    combined_daily_df = historical_daily_df.union(daily_df)
+    logger.info("Merged new data with existing historical data.")
 except Exception:
-    combined_daily_df = daily_df  # If table doesn't exist, just use today's data
+    combined_daily_df = daily_df
+    logger.info("No existing data found. Creating new dataset.")  # If table doesn't exist, just use today's data
 
 # Store the updated daily data (overwrite ensures full history is maintained)
-combined_daily_df.write.mode("overwrite").format("parquet").save(daily_data_path)
-
-print(f"Daily weather and air quality data successfully stored.")
+logger.info("Writing daily data to Delta Lake.")
+combined_daily_df.write.mode("overwrite").format("delta").save(daily_data_path)
+logger.info(f"Daily weather and air quality data successfully stored.")
 
 # COMMAND ----------
 
@@ -99,7 +137,8 @@ print(f"Daily weather and air quality data successfully stored.")
 # COMMAND ----------
 
 # Aggregate Monthly Statistics
-df_temp = spark.read.format("parquet").load(daily_data_path) # Reloading the table
+logger.info("Calculating monthly aggregates.")
+df_temp = spark.read.format("delta").load(daily_data_path) # Reloading the table
 
 aggregated_df = (
     df_temp.withColumn("year", year(col("date")))
@@ -131,16 +170,36 @@ aggregated_df = (
 )
 
 # Store Aggregated Data
-aggregated_df.write.mode("overwrite").format("parquet").save(aggregated_data_path)
+logger.info("Writing aggregated data to Delta Lake.")
+aggregated_df.write.mode("overwrite").format("delta").save(aggregated_data_path)
+logger.info(f"Aggregated data updated successfully.")
 
-print(f"Aggregated data updated successfully.")
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Data Preview
 
 # COMMAND ----------
 
 # Load and display the daily and aggregated data
 
-daily = spark.read.format("parquet").load(daily_data_path)
-aggregated = spark.read.format("parquet").load(aggregated_data_path)
+daily = spark.read.format("delta").load(daily_data_path)
+aggregated = spark.read.format("delta").load(aggregated_data_path)
 
 display(daily)
 display(aggregated)
+
+# COMMAND ----------
+
+logger.info("Notebook Execution Completed Successfully!")
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Logs Preview
+# MAGIC
+
+# COMMAND ----------
+
+logs = spark.read.format("delta").load(log_table_path)
+logs.orderBy(desc("timestamp")).display()
