@@ -13,11 +13,6 @@ variable "tenant_id" {
   description = "Azure Tenant ID"
 }
 
-variable "object_id" {
-  type        = string
-  description = "Azure Active Directory Object ID for Key Vault Access Policy"
-}
-
 variable "location" {
   type        = string
   default     = "West Europe"
@@ -28,4 +23,9 @@ variable "env_prefix" {
   type        = string
   default     = "dev"
   description = "Environment prefix to uniquely name resources"
+}
+
+variable "object_id" {
+  type        = string
+  description = "Azure Object ID"
 }

@@ -1,65 +1,10 @@
 # Databricks notebook source
-# MAGIC %pip install loguru
-
-# COMMAND ----------
-
-import requests
-import time
-import json
-
-from loguru import logger
-from pyspark.sql import Row
-from pyspark.sql.functions import col, avg, min, max, year, month, round, date_format, desc
-from datetime import datetime
-
-# COMMAND ----------
-
 # MAGIC %md
-# MAGIC ## Configs
+# MAGIC ### Run Configs
 
 # COMMAND ----------
 
-def automount(databricks_scope, sa_name, sa_key, api):
-    storage_account_name = dbutils.secrets.get(databricks_scope, sa_name)
-
-    spark.conf.set(
-        f"fs.azure.account.key.{storage_account_name}.dfs.core.windows.net",
-        dbutils.secrets.get(scope=databricks_scope, key=sa_key))
-    
-    API_KEY = dbutils.secrets.get(databricks_scope, api)
-
-    return API_KEY, storage_account_name
-
-API_KEY, storage_account_name = automount("my-keyvault-scope", "storageAccountName", "storageAccountKey", "weather-api")
-
-daily_data_path = f"abfss://databricks@{storage_account_name}.dfs.core.windows.net/daily_weather_air_data_delta"
-aggregated_data_path = f"abfss://databricks@{storage_account_name}.dfs.core.windows.net/aggregated_weather_air_data_delta"
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ## Logger
-
-# COMMAND ----------
-
-# Initialize Logger
-log_table_path = f"abfss://databricks@{storage_account_name}.dfs.core.windows.net/logs/databricks_logs"
-
-# Function to write logs immediately to Delta
-def log_sink(message):
-    parts = message.split(" - ", 2)  # Splitting into time, level, and message
-    if len(parts) == 3:
-        log_row = [Row(timestamp=parts[0], level=parts[1], message=parts[2])]
-        log_df = spark.createDataFrame(log_row)
-        log_df.write.mode("append").format("delta").save(log_table_path)  # Append log entry to Delta
-
-# Configure Loguru to use log_sink
-logger.remove()
-logger.add(lambda msg: print(msg, end=""), format="{time:YYYY-MM-DD HH:mm:ss.SSS} - {level} - {message}", level="INFO")
-logger.add(log_sink, format="{time:YYYY-MM-DD HH:mm:ss.SSS} - {level} - {message}")
-
-logger.info("Logger initialized!")
-
+# MAGIC %run "/Workspace/Shared/utils"
 
 # COMMAND ----------
 
@@ -67,6 +12,11 @@ logger.info("Logger initialized!")
 # MAGIC ### Daily weather and air quality data
 
 # COMMAND ----------
+
+DEBUG_MODE = False
+
+daily_data_path = f"abfss://databricks@{storage_account_name}.dfs.core.windows.net/daily_weather_air_data_delta"
+aggregated_data_path = f"abfss://databricks@{storage_account_name}.dfs.core.windows.net/aggregated_weather_air_data_delta"
 
 # Cities list
 cities = ["Sliven", "London", "Paris", "Berlin", "Edinburgh", "New York"]
@@ -77,21 +27,17 @@ daily_data = []
 # Fetch data from APIs
 for city in cities:
     logger.info(f"Fetching weather data for {city}.")
-    # Fetch Weather Data
     weather_url = f"https://api.openweathermap.org/data/2.5/weather?q={city}&appid={API_KEY}&units=metric"
-    weather_response = requests.get(weather_url)
 
-    if weather_response.status_code == 200:
-        weather_json = weather_response.json()
+    weather_json = fetch_api_data(weather_url)
+    if weather_json:
         lat, lon = weather_json["coord"]["lat"], weather_json["coord"]["lon"]
 
         logger.info(f"Fetching air pollution data for {city}.")
-        # Fetch Air Pollution Data
         air_pollution_url = f"https://api.openweathermap.org/data/2.5/air_pollution?lat={lat}&lon={lon}&appid={API_KEY}"
-        air_pollution_response = requests.get(air_pollution_url)
-
-        if air_pollution_response.status_code == 200:
-            air_pollution_json = air_pollution_response.json()
+        
+        air_pollution_json = fetch_api_data(air_pollution_url)
+        if air_pollution_json:
 
             # Append data to list
             daily_data.append(Row(
@@ -107,9 +53,9 @@ for city in cities:
                 co2=float(air_pollution_json["list"][0]["components"]["co"]) 
             ))
         else:
-            logger.warning(f"Failed to fetch air pollution data for {city}, Status Code: {air_pollution_response.status_code}")
+            logger.warning(f"Failed to fetch air pollution data for {city}")
     else:
-        logger.warning(f"Failed to fetch weather data for {city}, Status Code: {weather_response.status_code}")
+        logger.warning(f"Failed to fetch weather data for {city}")
 
 # Convert today's data to DataFrame
 logger.info("Converting data to Spark DataFrame.")
@@ -176,22 +122,22 @@ logger.info(f"Aggregated data updated successfully.")
 
 # COMMAND ----------
 
+logger.info("Notebook Execution Completed Successfully!")
+
+# COMMAND ----------
+
 # MAGIC %md
 # MAGIC ## Data Preview
 
 # COMMAND ----------
 
 # Load and display the daily and aggregated data
+if DEBUG_MODE:
+    daily = spark.read.format("delta").load(daily_data_path)
+    aggregated = spark.read.format("delta").load(aggregated_data_path)
 
-daily = spark.read.format("delta").load(daily_data_path)
-aggregated = spark.read.format("delta").load(aggregated_data_path)
-
-display(daily)
-display(aggregated)
-
-# COMMAND ----------
-
-logger.info("Notebook Execution Completed Successfully!")
+    display(daily)
+    display(aggregated)
 
 # COMMAND ----------
 
@@ -201,5 +147,8 @@ logger.info("Notebook Execution Completed Successfully!")
 
 # COMMAND ----------
 
-logs = spark.read.format("delta").load(log_table_path)
-logs.orderBy(desc("timestamp")).display()
+# Load and display the logs data ordered by timestamp in descending order
+if DEBUG_MODE:
+    logs = spark.read.format("delta").load(log_table_path)
+
+    display(logs.orderBy(desc("timestamp")))
