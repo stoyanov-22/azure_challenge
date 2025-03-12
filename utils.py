@@ -1,5 +1,6 @@
 # Databricks notebook source
 # MAGIC %pip install loguru==0.7.3 logtail-python
+# MAGIC
 
 # COMMAND ----------
 
@@ -52,6 +53,8 @@ API_KEY, storage_account_name = automount(databricks_scope, "storageAccountName"
 log_table_path = f"abfss://databricks@{storage_account_name}.dfs.core.windows.net/logs/databricks_logs"
 logs_token = dbutils.secrets.get(databricks_scope, "weather-logs")
 host = "s1233140.eu-nbg-2.betterstackdata.com"
+
+handler = LogtailHandler(source_token=logs_token, host=host)
 
 def log_sink(message):
     """Write log messages to Delta."""

@@ -8,12 +8,18 @@
 
 # COMMAND ----------
 
+start_time = time.time()
+
+logger.info("Starting notebook execution.")
+
+# COMMAND ----------
+
 # MAGIC %md
 # MAGIC ### Daily weather and air quality data
 
 # COMMAND ----------
 
-DEBUG_MODE = False
+DEBUG_MODE = True
 
 daily_data_path = f"abfss://databricks@{storage_account_name}.dfs.core.windows.net/daily_weather_air_data_delta"
 aggregated_data_path = f"abfss://databricks@{storage_account_name}.dfs.core.windows.net/aggregated_weather_air_data_delta"
@@ -123,6 +129,11 @@ logger.info(f"Aggregated data updated successfully.")
 # COMMAND ----------
 
 logger.info("Notebook Execution Completed Successfully!")
+
+end_time = time.time()
+execution_time = __builtins__.round(end_time - start_time, 2)
+
+logger.info(f"Notebook execution completed in {execution_time} seconds.")
 
 # COMMAND ----------
 
