@@ -29,3 +29,8 @@ variable "object_id" {
   type        = string
   description = "Azure Object ID"
 }
+
+variable "weather_logs_token" {
+  type        = string
+  description = "API Key for Weather API"
+}

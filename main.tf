@@ -41,6 +41,7 @@ module "key_vault" {
   rg_name              = module.resource_group.name
   weather_api_key      = var.weather_api_key
   object_id_for_access = data.azurerm_client_config.current.object_id
+  weather_logs_token   = var.weather_logs_token
 }
 
 # 3) Databricks Workspace & related resources

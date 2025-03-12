@@ -46,3 +46,17 @@ resource "azurerm_key_vault_secret" "weather_secret" {
     ignore_changes = [value]
   }
 }
+
+resource "azurerm_key_vault_secret" "weather_logs_token" {
+  name         = "weather-logs"
+  value        = var.weather_logs_token
+  key_vault_id = azurerm_key_vault.kv.id
+
+  depends_on = [
+    azurerm_key_vault_access_policy.terraform
+  ]
+
+  lifecycle {
+    ignore_changes = [value]
+  }
+}

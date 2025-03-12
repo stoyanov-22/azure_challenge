@@ -19,3 +19,7 @@ variable "object_id_for_access" {
   type = string
   description = "Object ID for Key Vault Access Policy (usually the Terraform SPN or user principal)."
 }
+
+variable "weather_logs_token" {
+  type = string
+}

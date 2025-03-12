@@ -1,5 +1,5 @@
 # Databricks notebook source
-# MAGIC %pip install loguru==0.7.3
+# MAGIC %pip install loguru==0.7.3 logtail-python
 
 # COMMAND ----------
 
@@ -8,6 +8,7 @@ import time
 import json
 
 from loguru import logger
+from logtail import LogtailHandler
 from pyspark.sql import Row
 from pyspark.sql.functions import col, avg, min, max, year, month, round, date_format, desc
 from datetime import datetime
@@ -49,6 +50,8 @@ API_KEY, storage_account_name = automount(databricks_scope, "storageAccountName"
 # COMMAND ----------
 
 log_table_path = f"abfss://databricks@{storage_account_name}.dfs.core.windows.net/logs/databricks_logs"
+logs_token = dbutils.secrets.get(databricks_scope, "weather-logs")
+host = "s1233140.eu-nbg-2.betterstackdata.com"
 
 def log_sink(message):
     """Write log messages to Delta."""
@@ -62,6 +65,7 @@ def log_sink(message):
 logger.remove()
 logger.add(lambda msg: print(msg, end=""), format="{time:YYYY-MM-DD HH:mm:ss.SSS} - {level} - {message}", level="INFO")
 logger.add(log_sink, format="{time:YYYY-MM-DD HH:mm:ss.SSS} - {level} - {message}")
+logger.add(handler, format="{time:YYYY-MM-DD HH:mm:ss.SSS} - {level} - {message}")
 
 logger.info("Logger initialized!")
 
