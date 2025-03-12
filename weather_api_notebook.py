@@ -84,6 +84,18 @@ logger.info(f"Daily weather and air quality data successfully stored.")
 # COMMAND ----------
 
 # MAGIC %md
+# MAGIC ### Check for weather anomalies in collected data
+
+# COMMAND ----------
+
+for row in daily_data:
+    alerts = detect_anomalies(row)
+    for alert in alerts:
+        logger.warning(alert)  # Log alert
+
+# COMMAND ----------
+
+# MAGIC %md
 # MAGIC ### Monthly aggregated weather and air quality data, including temperature, humidity, and AQI
 
 # COMMAND ----------
