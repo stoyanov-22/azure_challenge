@@ -89,4 +89,23 @@ def fetch_api_data(url, max_retries=3, backoff_factor=2):
 
 # COMMAND ----------
 
+def detect_anomalies(row):
+    """Check for extreme weather and air quality conditions."""
+    alerts = []
+
+    if row.temperature >= 35:
+        alerts.append(f"Extreme heat detected in {row.city}: {row.temperature}°C")
+    elif row.temperature <= -10:
+        alerts.append(f"Extreme cold detected in {row.city}: {row.temperature}°C")
+
+    if row.air_quality_index >= 4:  
+        alerts.append(f"High pollution levels in {row.city}: AQI {row.air_quality_index}")
+
+    if row.wind_speed >= 10:
+        alerts.append(f"High wind speeds detected in {row.city}: {row.wind_speed} m/s")
+
+    return alerts
+
+# COMMAND ----------
+
 logger.info("Utils initialized successfully.")
