@@ -8,6 +8,7 @@ import requests
 import time
 import json
 
+from delta.tables import *
 from loguru import logger
 from logtail import LogtailHandler
 from pyspark.sql import Row
