@@ -48,7 +48,7 @@ for city in cities:
             # Append data to list
             daily_data.append(Row(
                 city=city,
-                date=datetime.now().strftime("%Y-%m-%d %H:%M"),
+                date=datetime.now().strftime("%Y-%m-%d"),
                 temperature=float(weather_json["main"]["temp"]),
                 humidity=float(weather_json["main"]["humidity"]),
                 weather=weather_json["weather"][0]["description"],
@@ -63,23 +63,42 @@ for city in cities:
     else:
         logger.warning(f"Failed to fetch weather data for {city}")
 
-# Convert today's data to DataFrame
+
+# Convert today's data to DataFrame (same as before)
 logger.info("Converting data to Spark DataFrame.")
-daily_df = spark.createDataFrame(daily_data)
+if not daily_data:
+    logger.warning("No daily data fetched, skipping merge operation for daily data.")
+else:
+    daily_df = spark.createDataFrame(daily_data)
+    logger.info("Attempting to merge daily data into Delta Lake.")
 
-# Try to read existing historical daily data
-try:
-    historical_daily_df = spark.read.format("delta").load(daily_data_path)
-    combined_daily_df = historical_daily_df.union(daily_df)
-    logger.info("Merged new data with existing historical data.")
-except Exception:
-    combined_daily_df = daily_df
-    logger.info("No existing data found. Creating new dataset.")  # If table doesn't exist, just use today's data
+    try:
+        # Get a DeltaTable object for the target path
+        target_daily_table = DeltaTable.forPath(spark, daily_data_path)
 
-# Store the updated daily data (overwrite ensures full history is maintained)
-logger.info("Writing daily data to Delta Lake.")
-combined_daily_df.write.mode("overwrite").format("delta").save(daily_data_path)
-logger.info(f"Daily weather and air quality data successfully stored.")
+        # Perform the MERGE
+        # Alias target as 't' and source (today's data) as 's'
+        target_daily_table.alias("t") \
+            .merge(
+                daily_df.alias("s"),
+                # Condition to check if a row for the same city and exact timestamp already exists
+                # This assumes 'date' column captures timestamp precisely enough for idempotency
+                "t.city = s.city AND t.date = s.date"
+            ) \
+            .whenNotMatchedInsertAll().execute() # Insert the row from source ('s') if no match is found in target ('t')
+
+
+        logger.info(f"Daily weather and air quality data successfully merged into {daily_data_path}")
+
+    except Exception as e:
+        # Check if the error is because the table doesn't exist yet
+        if "is not a Delta table" in str(e) or "Path does not exist" in str(e):
+             logger.info(f"Delta table {daily_data_path} not found. Creating new table.")
+             daily_df.write.format("delta").save(daily_data_path) # Create table on first run
+             logger.info(f"New daily data table created at {daily_data_path}")
+        else:
+            logger.error(f"Error merging data into Delta table {daily_data_path}: {e}")
+            raise e # Re-throw other errors
 
 # COMMAND ----------
 
@@ -160,7 +179,7 @@ if DEBUG_MODE:
     aggregated = spark.read.format("delta").load(aggregated_data_path)
 
     display(daily)
-    display(aggregated)
+    display(aggregated.orderBy("month"))
 
 # COMMAND ----------
 
