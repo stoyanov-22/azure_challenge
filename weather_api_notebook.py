@@ -24,8 +24,12 @@ DEBUG_MODE = True
 daily_data_path = f"abfss://databricks@{storage_account_name}.dfs.core.windows.net/daily_weather_air_data_delta"
 aggregated_data_path = f"abfss://databricks@{storage_account_name}.dfs.core.windows.net/aggregated_weather_air_data_delta"
 
-# Cities list
-cities = ["Sliven", "London", "Paris", "Berlin", "Edinburgh", "New York"]
+# Cities to fetch data for
+cities_file_location = "/dbfs/FileStore/tables/cities.json"
+
+with open(cities_file_location, 'r') as f:
+    config_data = json.load(f)
+    cities = config_data.get("target_cities", [])
 
 # Initialize list for combined data
 daily_data = []
@@ -63,8 +67,7 @@ for city in cities:
     else:
         logger.warning(f"Failed to fetch weather data for {city}")
 
-
-# Convert today's data to DataFrame (same as before)
+# Convert today's data to DataFrame
 logger.info("Converting data to Spark DataFrame.")
 if not daily_data:
     logger.warning("No daily data fetched, skipping merge operation for daily data.")
@@ -82,7 +85,6 @@ else:
             .merge(
                 daily_df.alias("s"),
                 # Condition to check if a row for the same city and exact timestamp already exists
-                # This assumes 'date' column captures timestamp precisely enough for idempotency
                 "t.city = s.city AND t.date = s.date"
             ) \
             .whenNotMatchedInsertAll().execute() # Insert the row from source ('s') if no match is found in target ('t')
@@ -178,8 +180,8 @@ if DEBUG_MODE:
     daily = spark.read.format("delta").load(daily_data_path)
     aggregated = spark.read.format("delta").load(aggregated_data_path)
 
-    display(daily)
-    display(aggregated.orderBy("month"))
+    display(daily.orderBy("date", ascending=False))
+    display(aggregated.orderBy("month", ascending=True))
 
 # COMMAND ----------
 
