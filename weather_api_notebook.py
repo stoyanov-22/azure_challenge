@@ -36,14 +36,12 @@ daily_data = []
 
 # Fetch data from APIs
 for city in cities:
-    logger.info(f"Fetching weather data for {city}.")
     weather_url = f"https://api.openweathermap.org/data/2.5/weather?q={city}&appid={API_KEY}&units=metric"
 
     weather_json = fetch_api_data(weather_url)
     if weather_json:
         lat, lon = weather_json["coord"]["lat"], weather_json["coord"]["lon"]
 
-        logger.info(f"Fetching air pollution data for {city}.")
         air_pollution_url = f"https://api.openweathermap.org/data/2.5/air_pollution?lat={lat}&lon={lon}&appid={API_KEY}"
         
         air_pollution_json = fetch_api_data(air_pollution_url)
