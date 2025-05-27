@@ -34,46 +34,38 @@ with open(cities_file_location, 'r') as f:
 # Initialize list for combined data
 daily_data = []
 
-def fetch_city_data(city):
-    try:
-        weather_url = f"https://api.openweathermap.org/data/2.5/weather?q={city}&appid={API_KEY}&units=metric"
-        weather_json = fetch_api_data(weather_url)
-        if not weather_json:
-            logger.warning(f"Failed to fetch weather data for {city}")
-            return None
+# Fetch data from APIs
+for city in cities:
+    logger.info(f"Fetching weather data for {city}.")
+    weather_url = f"https://api.openweathermap.org/data/2.5/weather?q={city}&appid={API_KEY}&units=metric"
 
+    weather_json = fetch_api_data(weather_url)
+    if weather_json:
         lat, lon = weather_json["coord"]["lat"], weather_json["coord"]["lon"]
+
+        logger.info(f"Fetching air pollution data for {city}.")
         air_pollution_url = f"https://api.openweathermap.org/data/2.5/air_pollution?lat={lat}&lon={lon}&appid={API_KEY}"
+        
         air_pollution_json = fetch_api_data(air_pollution_url)
-        if not air_pollution_json:
+        if air_pollution_json:
+
+            # Append data to list
+            daily_data.append(Row(
+                city=city,
+                date=datetime.now().strftime("%Y-%m-%d"),
+                temperature=float(weather_json["main"]["temp"]),
+                humidity=float(weather_json["main"]["humidity"]),
+                weather=weather_json["weather"][0]["description"],
+                wind_speed=float(weather_json["wind"]["speed"]),
+                air_quality_index=float(air_pollution_json["list"][0]["main"]["aqi"]),
+                pm2_5=float(air_pollution_json["list"][0]["components"]["pm2_5"]),
+                pm10=float(air_pollution_json["list"][0]["components"]["pm10"]),
+                co2=float(air_pollution_json["list"][0]["components"]["co"]) 
+            ))
+        else:
             logger.warning(f"Failed to fetch air pollution data for {city}")
-            return None
-
-        return Row(
-            city=city,
-            date=datetime.now().strftime("%Y-%m-%d"),
-            temperature=float(weather_json["main"]["temp"]),
-            humidity=float(weather_json["main"]["humidity"]),
-            weather=weather_json["weather"][0]["description"],
-            wind_speed=float(weather_json["wind"]["speed"]),
-            air_quality_index=float(air_pollution_json["list"][0]["main"]["aqi"]),
-            pm2_5=float(air_pollution_json["list"][0]["components"]["pm2_5"]),
-            pm10=float(air_pollution_json["list"][0]["components"]["pm10"]),
-            co2=float(air_pollution_json["list"][0]["components"]["co"])
-        )
-
-    except Exception as e:
-        logger.error(f"Error fetching data for {city}: {e}")
-        return None
-
-# Threaded fetching
-with ThreadPoolExecutor(max_workers=8) as executor:
-    future_to_city = {executor.submit(fetch_city_data, city): city for city in cities}
-    for future in as_completed(future_to_city):
-        result = future.result()
-        if result:
-            daily_data.append(result)
-logger.info("Data is fetched for all cities successfully!")
+    else:
+        logger.warning(f"Failed to fetch weather data for {city}")
 
 # Convert today's data to DataFrame
 logger.info("Converting data to Spark DataFrame.")
@@ -109,7 +101,6 @@ else:
         else:
             logger.error(f"Error merging data into Delta table {daily_data_path}: {e}")
             raise e # Re-throw other errors
-
 
 # COMMAND ----------
 

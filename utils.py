@@ -8,7 +8,6 @@ import requests
 import time
 import json
 
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from delta.tables import *
 from loguru import logger
 from logtail import LogtailHandler
